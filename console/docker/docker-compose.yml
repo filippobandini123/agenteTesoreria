@@ -1,0 +1,25 @@
+# Console Tesoreria — da affiancare al container di Hermes.
+# Copiare questo file e console.env in una cartella dell'host FUORI dal volume di Hermes
+# (così l'agente non vede le credenziali della console), poi da quella cartella:
+#   docker compose up -d --build
+# HERMES_DATA = cartella dell'host montata su /opt/data nel container di Hermes (in .env accanto a questo file).
+services:
+  tesoreria-console:
+    build:
+      context: ${HERMES_DATA:?impostare HERMES_DATA}/tesoriere/console
+      dockerfile: docker/Dockerfile
+    image: tesoreria-console:1
+    container_name: tesoreria-console
+    restart: unless-stopped
+    env_file: ./console.env            # segreti: NON nel pacchetto (vedi console.env.esempio)
+    volumes:
+      # solo le due sottocartelle che servono (NON tutto /opt/data: lì ci sono anche i segreti di Hermes)
+      - ${HERMES_DATA}/tesoriere:/opt/data/tesoriere:ro     # pacchetto: console, motore, config (sola lettura)
+      - ${HERMES_DATA}/tesoreria:/opt/data/tesoreria        # archivio Report, proposte, simulazioni
+    ports:
+      - "8080:8080"                    # raggiungibile su http://<IP del server>:8080 dalla VPN
+    # Se Postgres è un container: stessa rete Docker (decommentare e mettere il nome della rete)
+    # networks: [rete_postgres]
+# networks:
+#   rete_postgres:
+#     external: true

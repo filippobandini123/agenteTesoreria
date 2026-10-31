@@ -1,0 +1,18 @@
+{% macro semaforo(livello) -%}
+{%- set m = {'verde': ('ok', 'Verde'), 'giallo': ('att', 'Giallo'), 'rosso': ('ko', 'Rosso'), 'rosso_prioritario': ('ko', 'Rosso prioritario')} -%}
+{%- set x = m.get(livello, ('neutro', livello or '—')) -%}
+<span class="sem {{ x[0] }}">{{ x[1] }}</span>
+{%- endmacro %}
+
+{% macro kpi_blocco(k) %}
+<div class="kpi">
+  <div><span>Picco di fabbisogno</span><b>{{ k.picco|eur }} €</b><small>{{ k.data_picco|gg }}</small></div>
+  <div><span>Primo giorno oltre il fido</span><b>{{ k.primo_scoperto|gg or 'mai' }}</b><small>margine minimo {{ k.margine_min|eur }} €</small></div>
+  <div><span>Scoperto del piano da regole</span><b>{{ k.scoperto_regole|eur }} €</b><small>prima dei tagli</small></div>
+  <div><span>Pagamenti tagliati</span><b>{{ k.tagli_n or 0 }}</b><small>{{ k.tagli_importo|eur }} €</small></div>
+  <div><span>Non collocabili</span><b>{{ k.nc_n or 0 }}</b><small>{{ k.nc_importo|eur }} €</small></div>
+  <div class="{{ 'allarme' if k.acc_dal }}"><span>Classe 0 e accordi onorati, dopo i tagli</span>
+    {% if k.acc_dal %}<b>oltre il fido dal {{ k.acc_dal|gg }}</b><small>scoperto massimo {{ k.acc_scoperto|eur }} € il {{ k.acc_data_max|gg }}</small>
+    {% else %}<b>nel fido</b><small>fino al penultimo giorno dell'orizzonte</small>{% endif %}</div>
+</div>
+{% endmacro %}

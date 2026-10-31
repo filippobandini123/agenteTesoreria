@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>Fornitori</h1><span class="nota">{{ righe|length }} fornitori · debito totale {{ totale|eur }} € · versione valida oggi · importi dall'ultimo run ufficiale</span></div>
+<form method="get" class="filtri">
+  <input name="q" value="{{ filtri.q }}" placeholder="Nome o codice">
+  <label>Elenco <select name="elenco"><option value="">tutti</option>{% for v in ['S','N'] %}<option {{ 'selected' if filtri.elenco == v }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Classe <select name="classe"><option value="">tutte</option>{% for v in ['0','1','2','3','4','5'] %}<option {{ 'selected' if filtri.classe == v }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Rilevanza <select name="rilevanza"><option value="">tutte</option>{% for v in ['1','2','3'] %}<option {{ 'selected' if filtri.rilevanza == v }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Conto <select name="conto"><option value="">tutti</option>{% for c in conti %}<option {{ 'selected' if filtri.conto == c }}>{{ c }}</option>{% endfor %}</select></label>
+  <label>Ordina per <select name="ordine">
+    {% for k, t in [('debito_totale','debito totale'),('scaduto','scaduto'),('in_orizzonte','importo nell\'orizzonte'),('tagliato','tagliato'),('parcheggiato','parcheggiato'),('nome','nome')] %}<option value="{{ k }}" {{ 'selected' if filtri.ordine == k }}>{{ t }}</option>{% endfor %}
+  </select></label>
+  <button>Filtra</button> <a href="/fornitori" class="link">azzera</a>
+</form>
+
+<form method="post" action="/fornitori/anteprima">
+<input type="hidden" name="csrf" value="{{ utente.csrf }}">
+<input type="hidden" name="modo" value="blocco">
+<div class="blocco">
+  <b>Modifica in blocco dei selezionati:</b>
+  <select name="campo">{% for k, t in CAMPI_FORNITORE.items() %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select>
+  <input name="valore" placeholder="nuovo valore (vuoto = cancella)">
+  <button class="primario">Anteprima</button>
+  <span class="nota">Niente viene scritto prima della conferma.</span>
+</div>
+<table class="denso">
+  <thead><tr>
+    <th><input type="checkbox" data-seleziona-tutti aria-label="Seleziona tutti"></th>
+    <th>Cod.</th><th>Fornitore</th><th>Conto prevalente</th><th class="num">Debito totale €</th><th class="num">di cui scaduto €</th><th>Elenco</th><th class="num">Classe</th><th class="num">Rilevanza</th>
+    <th class="num">Scaduto max</th><th class="num">Slitt. max</th><th class="num">Pag. min</th>
+    <th class="num">Nell'orizzonte €</th><th class="num">Tagliato €</th><th class="num">Parcheggiato €</th>
+  </tr></thead>
+  <tbody>
+  {% for f in righe %}
+  {% if f.nuovo and loop.previtem is defined and not loop.previtem.nuovo or f.nuovo and loop.first %}
+  <tr class="separatore"><td colspan="15">Non in anagrafica: {{ n_nuovi }} fornitori presenti nello scadenzario, trattati con la classe di default. Selezionali e imposta un campo per aggiungerli, oppure apri la scheda.</td></tr>
+  {% endif %}
+  <tr class="{{ 'nuovo' if f.nuovo }}">
+    <td><input type="checkbox" name="sel" value="{{ f.cod_fornitore }}" aria-label="Seleziona {{ f.ragione_sociale }}"></td>
+    <td>{{ f.cod_fornitore }}</td>
+    <td><a href="/fornitori/{{ f.cod_fornitore }}">{{ f.ragione_sociale }}</a>{% if f.nuovo %} <span class="etichetta st-proposta">non in anagrafica</span>{% endif %}</td>
+    <td class="conto">{{ f.conto_prevalente or '' }}</td>
+    <td class="num"><b>{{ f.debito_totale|eur }}</b></td>
+    <td class="num">{{ f.scaduto|eur }}</td>
+    <td>{{ f.in_elenco_acquisto|sn }}</td>
+    <td class="num">{{ f.classe_priorita if f.classe_priorita is not none else '' }}</td>
+    <td class="num">{% if f.rilevanza %}<span class="ril r{{ f.rilevanza }}">{{ f.rilevanza }}</span>{% endif %}</td>
+    <td class="num">{{ f.scaduto_max_tollerato|eur }}</td>
+    <td class="num">{{ f.slittamento_max_gg if f.slittamento_max_gg is not none else '' }}</td>
+    <td class="num">{{ f.pagamento_minimo|eur }}</td>
+    <td class="num">{{ f.in_orizzonte|eur }}</td>
+    <td class="num">{{ f.tagliato|eur }}</td>
+    <td class="num">{{ f.parcheggiato|eur }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</form>
+{% endblock %}

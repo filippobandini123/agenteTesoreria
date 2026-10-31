@@ -1,0 +1,321 @@
+# =====================================================================
+#  regole.yaml — Regole e priorità del motore di riscadenziamento
+#  Profilo Hermes: "tesoriere"
+#
+#  Questo file è letto SOLO dal motore deterministico (scripts/riscadenzia.py).
+#  L'agente LLM non lo modifica mai: può solo leggerlo per spiegare le scelte.
+#  Ogni modifica va versionata (campo `versione`) e viene registrata a DB
+#  insieme a ogni run, così ogni proposta è riproducibile.
+#
+#  Convenzione: [DA CONFERMARE] = default proposto in attesa di decisione
+#  (vedi DOMANDE_APERTE.md).
+# =====================================================================
+
+versione: "0.6.1"   # allineata al pacchetto: vedi CHANGELOG.md
+data_versione: 2026-10-31
+autore: Filippo
+
+# ---------------------------------------------------------------------
+# 1. ORIZZONTE DI PIANIFICAZIONE
+# ---------------------------------------------------------------------
+orizzonte:
+  giorni: 60                 # range ammesso 30–60
+  giorni_min: 30
+  giorni_max: 60
+  # Giorni in cui un pagamento può essere collocato.
+  calendario_pagamenti: giorni_lavorativi_bancari_IT   # lun-ven esclusi festivi nazionali  [DA CONFERMARE]
+  festivi_extra: []          # es. [2026-12-24, 2026-12-31] chiusure banca/azienda
+
+# ---------------------------------------------------------------------
+# 2. VINCOLO DI CASSA
+# ---------------------------------------------------------------------
+# Regola: per ogni giorno t dell'orizzonte
+#     saldo_proiettato(t) + fido_disponibile >= cuscinetto_minimo
+# Il fido anticipo POS è considerato sempre interamente disponibile.
+vincolo_cassa:
+  fido_anticipo_pos: 1000000.00
+  cuscinetto_minimo: 0.00    # nessuna soglia minima richiesta
+  # Linea della previsione usata come saldo (vedi fonti_dati.yaml → report.righe.saldo_finale)
+  saldo_di_riferimento: saldo_finale
+
+# ---------------------------------------------------------------------
+# 3. PERIMETRO: COSA IL MOTORE PUÒ SPOSTARE
+# ---------------------------------------------------------------------
+# Il motore sposta SOLO righe dello scadenzario passivo (ind_clifor = F).
+# Le uscite da budget (stipendi, INPS/IRPEF, IVA, affitti a budget,
+# finanziamenti, leasing, altro) restano fisse: entrano nel calcolo
+# del saldo ma non sono mai riscadenziate.
+perimetro:
+  includi_scaduti: true      # le righe del foglio Scaduti entrano in coda dal giorno 1
+  data_desiderata: scadenza_originale   # il motore ripianifica ogni giorno partendo
+                                        # da ScadOriginale (o oggi se già passata),
+                                        # ignorando le ipotesi HP precedenti.
+                                        # Alternative: scadenza_corrente  [DA CONFERMARE]
+
+# Date "congelate": giorni in cui i pagamenti fornitori in scadenza sono
+# neutralizzati nella previsione da una riga di compensazione del budget.
+# Le partite con questa scadenza NON entrano nel piano (data invariata) e la
+# compensazione viene tolta dai flussi fissi, così non diventa cassa fittizia.
+date_congelate: []   # 13/11 rimosso il 26/10: Report corretto, le partite si ripianificano
+                     # (formato: - { data: AAAA-MM-GG, riga_compensazione: "Altro" })
+
+# ---------------------------------------------------------------------
+# 4. CLASSI DI PRIORITÀ
+# ---------------------------------------------------------------------
+# Classe 0 = intoccabile: pagata sempre alla scadenza, anche se viola il vincolo
+#            (in tal caso → fabbisogno segnalato).
+# Classe 1 = fornitore in elenco acquisto: pagato alla scadenza inserita,
+#            stessa logica della classe 0 ma con priorità inferiore nel report fabbisogno.
+# Classi 2..5 = spostabili; la classe più bassa viene pagata prima.
+classi:
+  0:
+    nome: Intoccabile
+    spostabile: false
+  1:
+    nome: Fornitore in elenco acquisto
+    spostabile: false
+    data_riferimento: scadenza_corrente   # "paga alla scadenza inserita" (dat_scadenza attuale) — deciso 24/10
+  2:
+    nome: Strategico (non in elenco)
+    spostabile: true
+  3:
+    nome: Ordinario
+    spostabile: true
+  4:
+    nome: Differibile
+    spostabile: true
+  5:
+    nome: Massimamente differibile
+    spostabile: true
+
+classe_default_fornitore_non_classificato: 3
+
+# Regole automatiche di classe (valgono prima dell'anagrafica fornitori).
+regole_classe_automatiche:
+  # Scadenza bloccata (deciso 26/10): sigla BLOC nella nota del gestionale → pagata alla
+  # data attuale, sempre. È la PRIMA regola: vince su tutte le altre, accordi compresi.
+  - nome: scadenza_bloccata
+    condizione: { note_amm_contiene_sigla: "BLOC" }
+    classe: 0
+  - nome: tributi_e_contributi
+    condizione: { des_piacont: "Debiti vs Enti Tributari" }
+    classe: 0
+  - nome: causali_tributarie
+    condizione: { cod_caucon_in: ["VTS"] }        # verificare la causale  [DA CONFERMARE]
+    classe: 0
+  # Le righe con trattativa conclusa (TC) hanno una data concordata col fornitore.
+  - nome: trattativa_conclusa
+    condizione: { note_amm_contiene_sigla: "TC" }
+    classe: 0                                      # bloccata alla data concordata  [DA CONFERMARE]
+  # Piano di rientro concordato: le scadenze sono già aggiornate nel gestionale
+  # alle date delle rate, quindi vanno pagate a quelle date (deciso 26/10).
+  - nome: piano_di_rientro            # sigla PDR (grammatica delle note, 26/10)
+    condizione: { note_amm_contiene_sigla: "PDR" }
+    classe: 0
+  - nome: piano_di_rientro_testo      # forma storica in testo libero
+    condizione: { note_amm_contiene_testo: "piano di rientro" }
+    classe: 0
+
+# ---------------------------------------------------------------------
+# 4-bis. ACCORDI CON I FORNITORI (foglio "Accordi" di anagrafica_fornitori.xlsx)
+# ---------------------------------------------------------------------
+# Tipo "congelamento_scaduto": dalla data di decorrenza
+#   - SCADUTO (riferimento < decorrenza)  → congelato: non pagato, non spostato,
+#     escluso dal piano di cassa, data invariata;
+#   - CORRENTE (riferimento >= decorrenza) → pagato alla scadenza attuale, come un
+#     fornitore in elenco: se la cassa non basta genera fabbisogno (saltare il
+#     corrente farebbe decadere l'accordo).
+# Riferimento = data documento (default) o scadenza originale, per accordo (colonna criterio).
+# Stato (colonna stato): Attivo (o vuoto) e Proposta sono applicati allo stesso modo: le
+# proposte valgono come accordi certi e si aggiornano man mano (deciso 26/10).
+# Rifiutato = ignorato.
+# Precedenza: scadenza bloccata (BLOC) > tributi, TC, piano di rientro > accordo > anagrafica > default.
+# Piano di rientro sullo scaduto: oggi non previsto (deciso 26/10). Quando ci sarà, le
+# scadenze delle rate si aggiornano nel gestionale con nota "piano di rientro" e la
+# regola automatica qui sopra le blocca alle date concordate.
+accordi:
+  classe_corrente: 1
+  # Scaduto congelato: ipotesi di pagamento in input (deciso 26/10). Va nel tracciato di import
+  # con questa data (origine ACCS); quando entra nell'orizzonte è un pagamento fisso.
+  # Il foglio Accordi può indicare una data diversa per accordo (colonna data_pagamento_scaduto).
+  data_pagamento_scaduto: 2027-01-31
+  criterio_default: data_doc
+  avviso_scadenza_accordo_gg: 15     # l'agente segnala gli accordi in scadenza
+
+# Precedenza: regole automatiche > anagrafica_fornitori.xlsx > classe default.
+# Il flag in_elenco_acquisto = S in anagrafica forza la classe 1
+# (a meno che una regola automatica dia classe 0).
+
+# ---------------------------------------------------------------------
+# 5. RIGHE ESCLUSE O PARTICOLARI
+# ---------------------------------------------------------------------
+righe_speciali:
+  sospese:                    # Sospeso = 1 (contestazioni, blocchi)
+    azione: escludi_e_segnala # non pagate, non spostate, elencate nel report  [DA CONFERMARE]
+  note_credito:               # val_residuo < 0
+    azione: compensa_fornitore  # riducono il pagamento dello stesso fornitore nel primo
+                                # giorno in cui il fornitore ha un pagamento  [DA CONFERMARE]
+  trattativa_in_corso:        # sigla TIC in NoteAmm
+    azione: sposta_e_segnala  # spostabile, ma evidenziata per non contraddire la trattativa
+
+# ---------------------------------------------------------------------
+# 6. ALLOCAZIONE DELLA CASSA DISPONIBILE
+# ---------------------------------------------------------------------
+# Algoritmo (giorno per giorno, dal primo giorno dell'orizzonte):
+#  a) colloca classi 0 e 1 alla loro data;
+#  b) capacità(t) = min_{s>=t, s<=fine_orizzonte} [saldo(s) + fido - cuscinetto]
+#     (look-ahead: non si spende oggi cassa che servirà a un pagamento protetto futuro);
+#  c) coda(t) = righe spostabili con data_desiderata <= t non ancora pagate;
+#  d) si serve la coda per classe crescente; la classe che non può essere
+#     pagata per intero è ripartita PRO QUOTA tra i fornitori sull'importo in coda
+#     (quota teorica del fornitore);
+#  e) dentro il fornitore si pagano i documenti INTERI per ScadOriginale crescente
+#     (FIFO) finché stanno nella quota teorica: nessuna rata viene frazionata,
+#     perché il tracciato di import non gestisce importi parziali;
+#  f) seconda passata: la capacità rimasta (somma degli "avanzi" di quota) viene
+#     usata per il documento successivo del fornitore con lo scarto maggiore
+#     tra quota teorica e pagato, se il documento ci sta per intero; si ripete
+#     finché nessun documento in coda ci sta.
+allocazione:
+  metodo_intra_classe: pro_quota
+  base_pro_quota: importo_residuo_in_coda
+  ordine_documenti_fornitore: scadenza_originale_asc
+  frazionamento:
+    ammesso: false              # deciso 24/10: i parziali non sono importabili nel gestionale
+    riempimento_residuo: scarto_quota_max   # regola della seconda passata (punto f)
+    suggerisci_parziali_manuali: true       # foglio informativo "Parziali_suggeriti" (NON importato):
+                                            # cosa si pagherebbe frazionando, da gestire a mano se utile
+    # Se in futuro il gestionale accetterà importi parziali:
+    #   ammesso: true, max_documenti_frazionati_per_fornitore_giorno: 1, importo_minimo_frazione: 0
+  arrotondamento_centesimi: 2
+  # Finestra di look-ahead del calcolo di capacità (punto b):
+  #   orizzonte → non si spende oggi cassa che servirà a qualunque uscita protetta futura
+  #               dell'orizzonte (massima prudenza: se stipendi/F24 futuri sono già scoperti,
+  #               nessun pagamento spostabile viene eseguito);
+  #   N (giorni) → si protegge solo la cassa che serve nei prossimi N giorni; gli scoperti
+  #               successivi diventano fabbisogno da coprire con nuova finanza.
+  lookahead_giorni: 60           # deciso 26/10; parametro: N giorni oppure "orizzonte"
+  avanzo_a_classe_successiva: true  # cassa avanzata da una classe passa alla successiva
+  anticipa_riscadenziati_se_cassa_consente: true   # riporta indietro le date se la cassa migliora
+  tolleranza_variazione_giorni: 0   # non proporre spostamenti di +/- N giorni rispetto alla data corrente
+
+# Tutela compatibile con la cassa (deciso 27/10): i protetti la cui data attuale è
+# successiva alla scadenza da documento vengono anticipati PER PRIMI, rata intera, dal
+# giorno della scadenza da documento (o dal primo giorno utile) verso la data attuale,
+# solo se la cassa lo consente senza sforare il fido. Mai oltre la data attuale.
+# Esclusi: TC, piani di rientro, BLOC e tributi (date concordate o di legge).
+tutela:
+  anticipo_se_cassa_consente: true
+  origini:                    # a chi si applica  [DA CONFERMARE l'elenco]
+    - elenco_acquisto         # classe 1 da anagrafica (fornitori da tutelare)
+    - accordo                 # corrente degli accordi
+    - anagrafica_classe0      # classe 0 assegnata in anagrafica
+
+# Piano in due fasi (deciso 28/10).
+#   Fase 1 — piano da regole: protetti alla loro data e tutelati (vedi `tutela.origini`) alla
+#            scadenza da documento (o al primo giorno utile se passata), SENZA guardare la cassa.
+#            Il risultato è lo scoperto "vero": quanto costa rispettare tutte le regole.
+#   Fase 2 — piano di taglio: giorno per giorno, dove il margine sopra il fido è negativo si
+#            tolgono i pagamenti tagliabili con data <= quel giorno, nell'ordine:
+#              rilevanza del fornitore (3 sacrificabile → 2 normale → 1 strategico),
+#              poi classe meno prioritaria, poi scadenza da documento più recente;
+#            i tagliati si ricollocano al primo giorno utile (prima i più rilevanti, poi FIFO),
+#            prima delle classi 2-5; se nessun giorno li regge vanno a fine orizzonte.
+#   Tagliare un fornitore di rilevanza 1 accende l'allerta (almeno 🔴).
+#   Per fissare a mano la data di un tagliato: sigla BLOC nella nota e nuova dat_scadenza.
+#   modalita: cassa = comportamento precedente (anticipo dei tutelati solo se la cassa lo consente).
+piano:
+  modalita: due_fasi          # due_fasi | cassa
+taglio:
+  classi: [1]                 # classi tagliabili; la classe 0 non si taglia mai
+  rilevanza_default: 2        # colonna `rilevanza` dell'anagrafica vuota = 2
+  # Corrente degli accordi (deciso 29/10): NON si taglia. Resta alla sua data come la classe 0, così lo
+  # scoperto si vede nel giorno in cui l'accordo non è sostenibile (verifica "dopo i tagli" nel Fabbisogno).
+  accordi: false              # true = il corrente degli accordi si taglia come gli altri tutelati
+
+# ---------------------------------------------------------------------
+# 7. VINCOLI FACOLTATIVI PER FORNITORE (da anagrafica, se valorizzati)
+# ---------------------------------------------------------------------
+# Se un vincolo verrebbe violato, la riga diventa "forzata": è pagata
+# anche oltre la capacità e genera fabbisogno.
+vincoli_fornitore:
+  slittamento_max_gg:
+    misurato_da: scadenza_originale
+  scaduto_max_tollerato:
+    unita: euro
+  pagamento_minimo:
+    descrizione: "se si paga il fornitore, almeno questa cifra (salvo residuo inferiore)"
+
+# ---------------------------------------------------------------------
+# 8. RIGHE NON COLLOCABILI NELL'ORIZZONTE
+# ---------------------------------------------------------------------
+non_collocabili:
+  azione: parcheggia          # deciso 24/10
+  data_parcheggio: fine_orizzonte   # ultimo giorno di pagamento dell'orizzonte:
+                                    # il debito resta DENTRO la previsione e pesa
+                                    # sul fabbisogno di quel giorno, senza sparire oltre l'orizzonte
+  segnala_in: fabbisogno
+
+# ---------------------------------------------------------------------
+# 9. FABBISOGNO
+# ---------------------------------------------------------------------
+fabbisogno:
+  calcolo: "max(0, -(saldo_post(t) + fido - cuscinetto)) per ogni t"
+  dettaglio:
+    - picco_e_data_picco
+    - primo_giorno_scoperto
+    - quota_dovuta_a_classe_0
+    - quota_dovuta_a_classe_1
+    - righe_non_collocabili
+
+# Allerte (deciso 26/10): agiscono solo sui messaggi, non sulla pianificazione.
+# margine(t) = saldo_post(t) + fido - cuscinetto  (quanto resta prima di sforare il fido)
+allerte:
+  margine_minimo: 100000      # 🟡 se in qualche giorno dell'orizzonte il margine scende sotto questa cifra
+  # 🔴 se il margine diventa negativo (fabbisogno > 0)
+  # 🔴 prioritario se sono scoperti stipendi/tributi (quota classe 0) o è in ritardo il corrente di un accordo
+
+# ---------------------------------------------------------------------
+# 10. NOTE AMMINISTRATIVE PROPOSTE
+# ---------------------------------------------------------------------
+# Riprende la convenzione esistente "HPEI(gg/mm):gg/mm(SIGLA)".
+note_amministrative:
+  genera: true
+  # Segnaposto: {data_run} {nuova_data} {classe} {origine}. Deciso 26/10: anche classe e origine.
+  formato: "HPAG({data_run:%d/%m}):{nuova_data:%d/%m}(AG)C{classe}-{origine}"   # sigla agente  [DA CONFERMARE]
+  codici_origine:              # sigle brevi dell'origine della classe
+    scadenza_bloccata: BLOC
+    tributi_e_contributi: TRIB
+    causali_tributarie: TRIB
+    trattativa_conclusa: TC
+    piano_di_rientro: PDR
+    piano_di_rientro_testo: PDR
+    accordo: ACC               # corrente di un accordo attivo
+    accordo_scaduto: ACCS      # scaduto congelato di un accordo (data in input)
+    elenco_acquisto: ELENCO    # anagrafica: in elenco acquisto / classe 1
+    classe: ANAG               # anagrafica: classe indicata
+    default: DEF               # fornitore senza classe in anagrafica
+  # L'import SOVRASCRIVE la nota (varchar 240): si manda la nota compatta (26/10 sera).
+  modalita: compatta
+  separatore: "_"
+  lunghezza_max: 240           # oltre: nessun taglio, la riga va tra le azioni manuali
+  # Grammatica delle sigle (stesse regole per operatori e agente)
+  sigle_da_togliere:           # ipotesi superate (HP, HPEI, HP EI, HPDC, HPAG…): restano nello storico del database
+    - '\*?(?<![A-Za-z])\d{0,2}HP\s?(?:EI|DC|AG)?\s?:?\s?(?:\(?\d{1,2}/\d{1,2}(?:/\d{2,4})?\)?)?(?:[\s:_]*\(?\d{1,2}/\d{1,2}(?:/\d{2,4})?\)?){0,2}(?:[\s_]*\(?[A-Z]{2,3}\)|\s[A-Z]{2}(?![A-Za-z]))?(?:C\d-[A-Z]+)?'
+  sigle_solo_ultima:           # si conserva solo l'occorrenza più recente (l'ultima nel testo)
+    - '\*?(?<![A-Za-z])TC\s?\([^)]*\)\s?:?\s?[^_]*?\([A-Z]{1,3}\)'
+    - '\*?(?<![A-Za-z])TIC\s?\([^)]*\)\s?:?\s?[^_]*?\([A-Z]{1,3}\)'
+    - '\*?(?<![A-Za-z])SOL\s?\([^)]*\)\s?:?\s?[^_]*?\([A-Z]{1,3}\)'
+  sigle_da_segnalare:          # nessun effetto sul calcolo; l'agente le segnala se la scadenza viene spostata
+    TIC: "Trattativa in corso: verificare prima dell'import"
+    SOL: "Sollecito ricevuto dal fornitore"
+
+# ---------------------------------------------------------------------
+# 11. AZIONI OPERATIVE DA SEGNALARE
+# ---------------------------------------------------------------------
+# Spostare una RiBa o un RID richiede un'azione in banca: nel report
+# compare una colonna "azione_operativa".
+azioni_operative:
+  RB: "Richiamo / insoluto concordato RiBa; pagamento successivo con bonifico"
+  RID: "Revoca/rifiuto addebito SDD; pagamento successivo con bonifico"
+  BO: null

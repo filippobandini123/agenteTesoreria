@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Segreti: mai nel repository
+.env
+*.env
+!console/docker/console.env.esempio
+console.env
+
+# Dati reali dell'azienda: mai nel repository
+config/anagrafica_fornitori.xlsx
+Report_di_cassa*.xlsx
+Proposta_*.xlsx
+SIM_Proposta_*.xlsx
+ultimo_run.json
+in/
+out/
+archivio/
+sim/
+
+# Editor e sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+~$*

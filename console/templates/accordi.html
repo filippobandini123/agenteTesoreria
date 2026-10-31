@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>Accordi con i fornitori</h1><span class="nota">{{ righe|length }} accordi · dati di scaduto e corrente dall'ultimo run ufficiale</span>
+  <a class="pulsante" href="/accordi/nuovo">Nuovo accordo</a></div>
+<form method="get" class="filtri">
+  <label>Stato <select name="stato"><option value="">tutti</option>{% for v in ['attivo','proposta','rifiutato'] %}<option value="{{ v }}" {{ 'selected' if stato == v }}>{{ v|capitalize }}</option>{% endfor %}</select></label>
+  <button>Filtra</button>
+</form>
+<table class="denso">
+  <thead><tr><th>Fornitore</th><th>Stato</th><th>Decorrenza</th><th>Criterio</th><th>Valido fino</th><th>Pag. scaduto</th>
+  <th class="num">Scaduto congelato €</th><th class="num">Corrente nell'orizzonte €</th><th class="num">Corrente in ritardo €</th><th class="num">Corrente fino al primo scoperto €</th><th>Note</th><th></th></tr></thead>
+  <tbody>
+  {% for a in righe %}
+  <tr>
+    <td><a href="/fornitori/{{ a.cod_fornitore }}">{{ a.ragione_sociale or a.cod_fornitore }}</a></td>
+    <td><span class="etichetta st-{{ a.stato }}">{{ a.stato }}</span></td>
+    <td>{{ a.decorrenza|gg }}</td><td>{{ a.criterio }}</td><td>{{ a.valido_fino|gg }}</td><td>{{ a.data_pagamento_scaduto|gg }}</td>
+    <td class="num">{{ a.riep.scaduto_congelato|eur }}</td><td class="num">{{ a.riep.corrente_orizzonte|eur }}</td>
+    <td class="num {{ 'rosso' if a.riep.corrente_gia_scaduto }}">{{ a.riep.corrente_gia_scaduto|eur }}</td>
+    <td class="num">{{ a.riep.corrente_fino_primo_scoperto|eur }}</td>
+    <td>{{ a.note or '' }}</td>
+    <td><a href="/accordi/{{ a.cod_fornitore }}/{{ a.decorrenza }}">modifica</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

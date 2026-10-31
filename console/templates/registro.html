@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>Registro delle modifiche</h1><span class="nota">ultimi 300 eventi · l'import iniziale non è mostrato</span></div>
+<form method="get" class="filtri">
+  <label>Tipo <select name="tipo">{% for v, t in [('','modifiche e accessi'),('fornitori','fornitori'),('accordi','accordi'),('accessi','accessi alla console')] %}<option value="{{ v }}" {{ 'selected' if tipo == v }}>{{ t }}</option>{% endfor %}</select></label>
+  <input name="chi" value="{{ chi }}" placeholder="Autore">
+  <button>Filtra</button>
+</form>
+<table class="denso">
+  <thead><tr><th>Quando</th><th>Chi</th><th>Cosa</th><th>Modifiche</th><th>Motivo</th></tr></thead>
+  <tbody>
+  {% for r in righe %}{% set d = r.dettaglio or {} %}
+  <tr>
+    <td>{{ r.quando.strftime('%d/%m/%Y %H:%M') }}</td>
+    <td>{{ r.autore }}</td>
+    <td>{% if r.evento == 'accesso_console' %}accesso{% else %}<a href="/fornitori/{{ d.cod_fornitore }}">{{ (d.dopo or {}).get('ragione_sociale') or d.cod_fornitore }}</a>{% if d.decorrenza %}<br><small>accordo dal {{ d.decorrenza|gg }}</small>{% endif %}{% endif %}</td>
+    <td>{% for c in d.cambiati or [] %}{% if c != 'nuovo' %}<div>{{ CAMPI_FORNITORE.get(c) or CAMPI_ACCORDO.get(c) or c }}: <span class="prima">{{ (d.prima or {}).get(c)|val }}</span> → <b>{{ (d.dopo or {}).get(c)|val }}</b></div>{% else %}<div>nuovo accordo</div>{% endif %}{% endfor %}</td>
+    <td>{{ d.motivo or '' }}</td>
+  </tr>
+  {% else %}<tr><td colspan="5" class="nota">Nessun evento.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

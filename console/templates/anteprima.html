@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>Anteprima delle modifiche</h1><span class="nota">Niente è ancora scritto.</span></div>
+{% if not esiti %}
+<div class="avviso">Nessuna differenza rispetto ai valori attuali: non c'è niente da registrare.</div>
+<p><a href="/" data-indietro>← Torna indietro</a></p>
+{% else %}
+<table>
+  <thead><tr><th>{{ 'Fornitore' if tipo == 'fornitori' else 'Accordo' }}</th><th>Campo</th><th>Prima</th><th></th><th>Dopo</th></tr></thead>
+  <tbody>
+  {% for e in esiti %}{% for c in e.cambiati %}
+    <tr>
+      {% if loop.first %}<td rowspan="{{ e.cambiati|length }}"><b>{{ e.ragione_sociale }}</b><br><small>{{ e.cod_fornitore }}{% if e.decorrenza %} · decorrenza {{ e.decorrenza|gg }}{% endif %}</small></td>{% endif %}
+      <td>{{ etichette.get(c, c) }}</td>
+      <td class="prima">{{ (e.prima or {}).get(c)|val }}</td>
+      <td>→</td>
+      <td class="dopo">{{ e.dopo[c]|val }}</td>
+    </tr>
+  {% endfor %}{% endfor %}
+  </tbody>
+</table>
+<form method="post" action="/{{ tipo }}/conferma" class="modulo conferma">
+  <input type="hidden" name="csrf" value="{{ utente.csrf }}">
+  <input type="hidden" name="payload" value="{{ payload }}">
+  <label>Motivo (obbligatorio, finisce nello storico) <input name="motivo" required maxlength="300"></label>
+  {% if tipo == 'fornitori' %}<label>In vigore dal <input type="date" name="dal" value="{{ oggi.isoformat() }}"></label>{% endif %}
+  <div><button class="primario">Conferma e registra</button> <a href="/{{ tipo }}" class="link">Annulla</a></div>
+</form>
+{% endif %}
+{% endblock %}

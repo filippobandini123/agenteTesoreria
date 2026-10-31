@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macro.html" import semaforo, kpi_blocco %}
+{% block corpo %}
+<div class="testata">
+  <h1>Run {{ run.tipo_run }} del {{ run.avviato_il.strftime('%d/%m/%Y %H:%M') }}</h1>
+  {{ semaforo(k.livello) }}
+  <span class="nota">Consuntivo al {{ k.consuntivo|gg }} · avviato da {{ run.avviato_da or 'tesoriere' }} · revisione: {{ run.stato_approvazione|replace('_', ' ') }}</span>
+  <a class="pulsante" href="/run/{{ run.run_id }}/excel">Excel della proposta</a>
+</div>
+{% if controlli %}<div class="avviso">{% for c in controlli %}<div><b>{{ c.id }}</b> ({{ c.esito }}): {{ c.messaggio }}</div>{% endfor %}</div>{% endif %}
+{{ kpi_blocco(k) }}
+<section class="riquadro">
+  <h2>Margine sul fido</h2>
+  <div class="grafico"><canvas data-grafico="{{ grafico }}"></canvas></div>
+</section>
+<div class="colonne">
+<section class="riquadro">
+  <h2>Tagli per fornitore</h2>
+  <table>
+    <thead><tr><th>Fornitore</th><th class="num">Rate</th><th class="num">di cui a fine orizzonte</th><th class="num">Importo €</th></tr></thead>
+    <tbody>
+    {% for t in tagli %}<tr><td><a href="/fornitori/{{ t.cod_fornitore }}">{{ t.fornitore }}</a></td><td class="num">{{ t.n }}</td><td class="num">{{ t.n_nc }}</td><td class="num">{{ t.importo|eur }}</td></tr>
+    {% else %}<tr><td colspan="4" class="nota">Nessun taglio.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="riquadro">
+  <h2>Non collocabili (classi 2–5), primi 50</h2>
+  <table>
+    <thead><tr><th>Fornitore</th><th class="num">Classe</th><th class="num">Rate</th><th class="num">Importo €</th></tr></thead>
+    <tbody>
+    {% for t in nc %}<tr><td><a href="/fornitori/{{ t.cod_fornitore }}">{{ t.fornitore }}</a></td><td class="num">{{ t.classe }}</td><td class="num">{{ t.n }}</td><td class="num">{{ t.importo|eur }}</td></tr>
+    {% else %}<tr><td colspan="4" class="nota">Nessuno.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+</div>
+{% endblock %}

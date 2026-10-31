@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>Simulazioni</h1><span class="nota">Si rifà il piano su un Report già ricevuto cambiando alcuni parametri. Anagrafica e piano ufficiale non vengono toccati.</span></div>
+{% if not reports %}<div class="avviso">Nessun Report nell'archivio: serve almeno un run ufficiale.</div>{% else %}
+<form method="post" action="/simulazioni" class="riquadro" data-attesa>
+  <input type="hidden" name="csrf" value="{{ utente.csrf }}">
+  <div class="riga-campi">
+    <label>Report <select name="report">{% for r in reports %}<option value="{{ r.nome }}">{{ r.data|gg }} — {{ r.nome[18:] if r.nome|length > 18 else r.nome }}</option>{% endfor %}</select></label>
+    <label>Fido € (vuoto = invariato) <input name="fido" inputmode="numeric" placeholder="1.000.000"></label>
+    <label>Look-ahead giorni (vuoto = invariato) <input name="lookahead" inputmode="numeric" placeholder="60"></label>
+  </div>
+  <h2>Modifiche per fornitore o accordo</h2>
+  <datalist id="elenco-fornitori">{% for f in fornitori %}<option value="{{ f.cod_fornitore }} — {{ f.ragione_sociale }}">{% endfor %}</datalist>
+  <table class="denso">
+    <thead><tr><th>Fornitore (scrivi il nome o il codice)</th><th>Cosa cambia</th><th>Nuovo valore</th></tr></thead>
+    <tbody>
+    {% for i in righe_override %}
+      <tr>
+        <td><input name="cod_{{ i }}" list="elenco-fornitori" class="largo"></td>
+        <td><select name="campo_{{ i }}">{% for k, t in campi.items() %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select></td>
+        <td><input name="val_{{ i }}" placeholder="es. 1, S, Rifiutato"></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="nota">Rilevanza 1-3 · classe 0-5 · elenco S/N · stato accordo Attivo/Proposta/Rifiutato. La simulazione richiede da 10 a 60 secondi.</p>
+  <button class="primario">Avvia la simulazione</button>
+  <span class="in-corso">Simulazione in corso…</span>
+</form>
+{% endif %}
+<section class="riquadro">
+  <h2>Simulazioni recenti</h2>
+  <table class="denso">
+    <thead><tr><th>Quando</th><th>Chi</th><th>Modifiche</th><th class="num">Picco €</th><th>Esito</th></tr></thead>
+    <tbody>{% for s in recenti %}
+      <tr><td><a href="/simulazioni/{{ s.run_id }}">{{ s.avviato_il.strftime('%d/%m %H:%M') }}</a></td><td>{{ s.avviato_da or 'tesoriere' }}</td>
+      <td>{{ s.ov|join(' · ') }}</td><td class="num">{{ s.fabbisogno_picco|eur }}</td><td>{{ s.esito }}</td></tr>
+    {% else %}<tr><td colspan="5" class="nota">Nessuna simulazione.</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endblock %}

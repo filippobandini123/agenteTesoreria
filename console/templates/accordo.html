@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>{{ 'Accordo: ' ~ (a.ragione_sociale or a.cod_fornitore) if a else 'Nuovo accordo' }}</h1>
+{% if a and a.modificato_da %}<span class="nota">ultima modifica: {{ a.modificato_da }}</span>{% endif %}</div>
+<section class="riquadro stretto">
+<form method="post" action="/accordi/anteprima" class="modulo">
+  <input type="hidden" name="csrf" value="{{ utente.csrf }}">
+  {% if a %}
+    <input type="hidden" name="cod" value="{{ a.cod_fornitore }}"><input type="hidden" name="decorrenza" value="{{ a.decorrenza }}">
+    <p class="nota">Fornitore {{ a.cod_fornitore }} · decorrenza {{ a.decorrenza|gg }} (fornitore e decorrenza identificano l'accordo)</p>
+  {% else %}
+    <input type="hidden" name="nuovo" value="1">
+    <label>Codice fornitore <input name="cod" required inputmode="numeric"></label>
+    <label>Ragione sociale <input name="ragione_sociale" required></label>
+    <label>Decorrenza <input type="date" name="decorrenza" required></label>
+  {% endif %}
+  <label>Stato <select name="stato">{% for v in ['proposta','attivo','rifiutato'] %}<option value="{{ v }}" {{ 'selected' if (a and a.stato == v) or (not a and v == 'proposta') }}>{{ v|capitalize }}</option>{% endfor %}</select></label>
+  <label>Criterio corrente/scaduto <select name="criterio">{% for v, t in [('data_doc','data documento'),('scadenza_originale','scadenza da documento')] %}<option value="{{ v }}" {{ 'selected' if a and a.criterio == v }}>{{ t }}</option>{% endfor %}</select></label>
+  <label>Valido fino (vuoto = senza scadenza) <input type="date" name="valido_fino" value="{{ a.valido_fino if a and a.valido_fino else '' }}"></label>
+  <label>Data di pagamento dello scaduto (vuoto = quella delle regole, 31/01/2027) <input type="date" name="data_pagamento_scaduto" value="{{ a.data_pagamento_scaduto if a and a.data_pagamento_scaduto else '' }}"></label>
+  <label>Note <input name="note" value="{{ a.note if a and a.note else '' }}"></label>
+  <button class="primario">Anteprima</button>
+</form>
+</section>
+{% endblock %}

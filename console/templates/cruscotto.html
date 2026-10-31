@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macro.html" import semaforo, kpi_blocco %}
+{% block corpo %}
+{% if not run %}
+<div class="avviso">Nessun run ufficiale riuscito nel database. Manda il Report al Tesoriere su Telegram.</div>
+{% else %}
+<div class="testata">
+  <h1>Piano del {{ (run.riepilogo_json or {}).get('data_run')|gg or run.avviato_il|gg }}</h1>
+  {{ semaforo(k.livello) }}
+  <span class="nota">Consuntivo al {{ k.consuntivo|gg }} · {{ k.spostamenti or 0 }} scadenze spostate · avviato da {{ run.avviato_da or 'tesoriere' }}</span>
+  <a class="pulsante" href="/run/{{ run.run_id }}">Dettaglio</a>
+  <a class="pulsante" href="/run/{{ run.run_id }}/excel">Excel della proposta</a>
+</div>
+{% if k.strategici %}<div class="avviso ko">Tagliati fornitori strategici: {{ k.strategici|join(', ') }}</div>{% endif %}
+{% if k.accordi_ritardo %}<div class="avviso ko">Corrente in ritardo su accordi: {{ k.accordi_ritardo|join(', ') }}</div>{% endif %}
+{{ kpi_blocco(k) }}
+<section class="riquadro">
+  <h2>Margine sul fido, giorno per giorno</h2>
+  <div class="grafico"><canvas data-grafico="{{ grafico }}" aria-label="Margine giornaliero sopra il fido"></canvas></div>
+</section>
+{% endif %}
+<section class="riquadro">
+  <h2>Ultimi run</h2>
+  <table>
+    <thead><tr><th>Avviato</th><th>Tipo</th><th>Da</th><th>Esito</th><th>Consuntivo</th><th class="num">Picco €</th><th>Revisione</th></tr></thead>
+    <tbody>
+    {% for x in runs %}
+    <tr>
+      <td><a href="{{ '/simulazioni/' if x.tipo_run == 'simulazione' else '/run/' }}{{ x.run_id }}">{{ x.avviato_il.strftime('%d/%m %H:%M') }}</a></td>
+      <td>{{ x.tipo_run }}</td><td>{{ x.avviato_da or 'tesoriere' }}</td>
+      <td><span class="etichetta {{ 'ok' if x.esito == 'ok' else 'ko' }}">{{ x.esito }}</span></td>
+      <td>{{ x.data_consuntivo|gg }}</td><td class="num">{{ x.fabbisogno_picco|eur }}</td>
+      <td>{{ x.stato_approvazione|replace('_', ' ') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

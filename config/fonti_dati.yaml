@@ -1,0 +1,195 @@
+# =====================================================================
+#  fonti_dati.yaml — Dove il motore legge e scrive
+#  Ricavato da "Report_di_cassa_giornaliero_2025_rev_2.xlsx" (ottobre 2026)
+# =====================================================================
+
+versione: "0.1.0"
+
+# ---------------------------------------------------------------------
+# 1. ACCESSO AI FILE (copia OneDrive → container Hermes)
+# ---------------------------------------------------------------------
+# Il motore lavora sempre su una COPIA locale, mai sul file originale.
+sincronizzazione:
+  metodo: rclone                       # rclone | ms365_mcp  (vedi README §4)
+  remote: "onedrive:Tesoreria/Agente"  # [DA CONFERMARE] cartella dedicata
+  locale_in: /opt/data/tesoreria/in
+  locale_out: /opt/data/tesoreria/out
+  comando_pull: "rclone copy onedrive:Tesoreria/Agente/in /opt/data/tesoreria/in --max-age 24h"
+  comando_push: "rclone copy /opt/data/tesoreria/out onedrive:Tesoreria/Agente/out"
+  # Il file deve essere salvato da Excel DOPO l'aggiornamento delle query:
+  # il motore legge i valori in cache delle formule del foglio Report.
+
+# ---------------------------------------------------------------------
+# 2. FILE DI PREVISIONE
+# ---------------------------------------------------------------------
+previsione:
+  file: "Report_di_cassa_giornaliero*.xlsx"   # pattern; si prende il più recente
+  # allegato (deciso 28/10): il Report arriva come allegato Telegram, l'agente lo salva in
+  #   /opt/data/tesoreria/in e lancia il run; il controllo di freschezza sull'ora del file non si applica
+  #   (resta il controllo bloccante sulla data del consuntivo). cartella = copia da OneDrive.
+  modalita: allegato                          # allegato | cartella
+  freschezza_max_ore: 18                      # solo modalità cartella: se più vecchio → stop e allerta
+  archivio: /opt/data/tesoreria/archivio          # ogni Report del run ufficiale, con data e impronta nel nome
+
+  # --- Foglio Report: previsione giornaliera per colonne -------------
+  report:
+    foglio: Report
+    riga_date: 7                 # le date sono in riga 7, una colonna per giorno
+    colonna_etichette: C         # le righe sono individuate per ETICHETTA, non per numero
+    righe:
+      saldo_iniziale:   "Saldo banche iniziale"
+      totale_entrate:   "TOTALE ENTRATE"
+      totale_uscite:    "TOTALE USCITE"
+      saldo_finale:     {riga: 12}            # etichetta assente (","): riga fissa  [verificare a ogni revisione]
+      # Entrate lette riga per riga (non dal totale, che può essere in cache non aggiornata)
+      entrate:
+        - "Incassi PV (causali VB e IP Intesa)"
+        - "Incassi Pos - Intesa (causale IP Intesa POS)"
+        - "Incassi POS - Credit Agricole (causale IP CA)"
+        - "Incassi Clienti (causale 102)"
+        - "Incassi ECOMMERCE (causali INE e IS)"
+      # Righe calcolate dallo scadenzario: il motore NON le usa dalla cache,
+      # le ricalcola dalla tabella (vedi §3) perché saranno modificate.
+      fornitori_rid:    "Fornitori RID"
+      fornitori_riba:   "Fornitori RIBA"
+      fornitori_bo:     "Fornitori Bonifico e Rimessa Diretta"
+      scaduto:          "Scaduto"
+      incassi_clienti:  "Incassi Clienti (causale 102)"
+      # Righe fisse da budget (entrano nel saldo, mai spostate)
+      fisse_budget:
+        - "Inps, Rit, Imposte (causali VR e VTR)"
+        - "Stipendi (causale PAD)"
+        - "Leasing arredi/noleggio auto"
+        - "Affitti "
+        - "Spese accessorie su affitti P.V."
+        - "Spese generali POS e sede"
+        - "Rimborso finanz, int pass e comp (causali MV, IC e SB)"
+        - "Liquidazione IVA (Forecast)"
+        - "Debiti Tributari"
+        - "Spese per Apertura PV(Caparre-Anticipi utenze-Depositi Cauzionali)"
+        - "Investimenti apertura PV"
+        - "Altro"
+        - "Rimborso anticipo CA"
+
+    # Punto di partenza: ultimo giorno a CONSUNTIVO.
+    # Rilevato automaticamente: è l'ultima colonna in cui la riga
+    # "Incassi PV" contiene una formula su DB_Mov_Banca (consuntivo)
+    # anziché su ForecastIncassi (previsione).
+    data_consuntivo:
+      metodo: auto_da_formula
+      riga_test: "Incassi PV (causali VB e IP Intesa)"
+      marcatore_consuntivo: "DB_Mov_Banca"
+      marcatore_previsione: "ForecastIncassi"
+
+  # --- Scadenzario passivo/attivo --------------------------------------
+  scadenzario:
+    foglio: Scadenzario_Attivo_Passivo
+    tabella: Scadenzario_Attivo_Passivo
+    filtro: { ind_clifor: F }
+    chiave_riga: [prg_documento, num_protocollo, ScadOriginale]  # più rate per documento
+    colonne: &colonne_scadenzario
+      # Chiave univoca della scadenza nel gestionale (campo "Protocollo" del tracciato di
+      # import). Se la colonna c'è, ogni scadenza è una partita a sé; se manca, il motore
+      # torna a raggruppare per documento + scadenza attuale.
+      id_scadenza:       numero_protocollo_effetto   # aggiunto alla query il 26/10
+      id_documento:      prg_documento
+      numero_doc:        des_num_doc
+      data_doc:          dat_doc
+      protocollo:        num_protocollo
+      conto:             des_piacont
+      causale:           cod_caucon
+      modalita:          cod_tipo_pag      # RB | RID | BO
+      importo_residuo:   val_residuo
+      ragione_sociale:   des_ragsoc
+      cod_fornitore:     cod_clifor
+      scadenza_originale: ScadOriginale
+      scadenza_corrente: dat_scadenza
+      note:              NoteAmm
+      sospeso:           Sospeso
+    # Nota: se dat_scadenza <> ScadOriginale la previsione tratta la riga
+    # come bonifico (ModPag = "BO"). Il motore replica questa logica.
+    regola_modpag_riscadenziata: BO
+
+  scaduti:
+    foglio: Scaduti_Attivo_Passivo
+    tabella: Scaduti_Attivo_Passivo
+    filtro: { ind_clifor: F }
+    colonne: *colonne_scadenzario          # stessi nomi di colonna dello scadenzario
+    data_riferimento: dat_scadenza
+
+# ---------------------------------------------------------------------
+# 3. CONTROLLI DI COERENZA SUGLI INPUT (bloccanti se "stop")
+# ---------------------------------------------------------------------
+controlli:
+  - id: file_aggiornato
+    descrizione: "file modificato nelle ultime freschezza_max_ore"
+    esito_ko: stop
+  - id: data_consuntivo_recente
+    descrizione: "ultimo giorno a consuntivo = ultimo giorno lavorativo"
+    esito_ko: stop
+  - id: chiavi_univoche
+    descrizione: "nessun duplicato su chiave_riga"
+    esito_ko: stop
+  - id: cache_coerente
+    descrizione: >
+      per ogni giorno, la somma delle righe fornitori in cache nel Report
+      coincide con la somma ricalcolata dallo scadenzario (tolleranza 1 €).
+      Se diverge, il file è stato salvato senza ricalcolo completo.
+    tolleranza_euro: 1.0
+    esito_ko: avviso            # [DA CONFERMARE] stop o avviso
+  - id: totali_coerenti
+    descrizione: "saldo_finale(t) = saldo_iniziale(t) + entrate(t) + uscite(t)"
+    tolleranza_euro: 1.0
+    esito_ko: stop
+
+# ---------------------------------------------------------------------
+# 4. ANAGRAFICA FORNITORI (configurazione priorità)
+# ---------------------------------------------------------------------
+anagrafica_fornitori:
+  # Dal 28/10 la fonte è Postgres (tes_anagrafica_fornitori con storico, tes_accordo).
+  # Modifiche: in SQL oppure da Telegram con `scripts/anagrafica.py` (anteprima → ok di Filippo → --conferma).
+  # L'Excel serve solo per il caricamento iniziale (`anagrafica.py importa`) o per lavorare offline
+  # passando --anagrafica al motore.
+  sorgente: db                  # db | excel
+  file: config/anagrafica_fornitori.xlsx
+  foglio: Fornitori
+  foglio_accordi: Accordi
+  chiave: cod_fornitore
+
+# ---------------------------------------------------------------------
+# 5. OUTPUT
+# ---------------------------------------------------------------------
+output:
+  cartella: /opt/data/tesoreria/out
+  nome_file: "Proposta_riscadenziamento_{data_run:%Y%m%d}_{run_id}.xlsx"
+  fogli:
+    - Import_ERP             # tracciato per il gestionale (PROVVISORIO, vedi sotto)
+    - Proposta_dettaglio     # ogni riga spostata con motivazione e regola
+    - Saldo_giornaliero      # ante / post / limite / margine / fabbisogno
+    - Fabbisogno
+    - Riepilogo_fornitori
+    - Azioni_operative       # RiBa da richiamare, RID da revocare
+    - Parziali_suggeriti     # solo informativo, NON importato: parziali che avrebbero usato la cassa residua
+    - Controlli_e_parametri  # esiti controlli, versione regole, hash input
+
+  # Tracciato di import nel gestionale: confermato il 26/10.
+  import_erp:
+    colonne:
+      - { nome: Numdoc,           da: num_protocollo, ripiego: numero_doc }   # protocollo 0 (31P, VTS) → numero documento del gestionale
+      - { nome: Sezdoc,           costante: "00", testo: true }    # default del gestionale
+      - { nome: Datadoc,          da: dat_doc,        formato: "dd/mm/yy" }
+      - { nome: Datascad_vecchia, da: dat_scadenza,   formato: "dd/mm/yy" }
+      - { nome: TipoCF,           costante: 1 }                    # 1 = fornitore
+      - { nome: Protocollo,       da: id_scadenza }                # chiave univoca della scadenza
+      - { nome: Data_Scanuova,    da: nuova_data,     formato: "dd/mm/yy" }
+      - { nome: Note,             da: nota_nuova }                 # ADDITIVA: il gestionale la accoda
+    # Senza importi: i pagamenti parziali non sono importabili, il motore sposta solo scadenze intere.
+    # Una partita è importabile solo se ha il Protocollo (chiave della scadenza).
+
+# ---------------------------------------------------------------------
+# 6. DATABASE (memoria e audit)
+# ---------------------------------------------------------------------
+database:
+  tipo: postgresql
+  dsn_env: TESORERIA_PG_DSN     # nel file env di Hermes, mai in chiaro qui
+  schema: tesoreria

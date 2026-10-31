@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_macro.html" import semaforo %}
+{% block corpo %}
+<div class="testata"><h1>Simulazione del {{ sim.avviato_il.strftime('%d/%m/%Y %H:%M') }}</h1>
+  {{ semaforo(ks.livello) }}
+  <span class="nota">{{ sim.avviato_da or 'tesoriere' }} · Report con consuntivo al {{ ks.consuntivo|gg }}</span>
+  <a class="pulsante" href="/run/{{ sim.run_id }}/excel">Excel della simulazione</a></div>
+<div class="avviso"><b>Modifiche simulate:</b> {{ override|join(' · ') }}</div>
+{% if dopo %}<div class="avviso"><b>Nella simulazione ci sono anche {{ dopo|length }} modifiche all'anagrafica o agli accordi fatte dopo il piano ufficiale:</b>
+<ul class="compatta">{% for e in dopo %}{% set d = e.dettaglio or {} %}<li>{{ (d.dopo or {}).get('ragione_sociale') or d.cod_fornitore }}: {% for c in d.cambiati or [] %}{{ CAMPI_FORNITORE.get(c) or CAMPI_ACCORDO.get(c) or c }} {{ (d.prima or {}).get(c)|val }} → {{ (d.dopo or {}).get(c)|val }}{{ '; ' if not loop.last }}{% endfor %} <small>({{ e.autore }}, {{ e.quando.strftime('%d/%m %H:%M') }})</small></li>{% endfor %}</ul></div>{% endif %}
+{% if not uff %}<div class="avviso">Non c'è un run ufficiale sullo stesso Report: confronto non disponibile.</div>{% endif %}
+<section class="riquadro">
+  <h2>Confronto con il piano ufficiale</h2>
+  <table>
+    <thead><tr><th></th><th class="num">Ufficiale</th><th class="num">Simulazione</th><th class="num">Differenza</th></tr></thead>
+    <tbody>
+    {% for nome, chiave in [('Picco di fabbisogno €','picco'),('Scoperto del piano da regole €','scoperto_regole'),('Pagamenti tagliati (n.)','tagli_n'),('Importo tagliato €','tagli_importo'),('Non collocabili (n.)','nc_n'),('Importo non collocabile €','nc_importo'),('Margine minimo €','margine_min')] %}
+      {% set a, b = ku.get(chiave), ks.get(chiave) %}
+      <tr><td>{{ nome }}</td><td class="num">{{ a|eur }}</td><td class="num">{{ b|eur }}</td>
+      <td class="num {{ 'piu' if (b or 0) - (a or 0) > 0.5 else ('meno' if (b or 0) - (a or 0) < -0.5 else '') }}">{% if a is not none and b is not none %}{{ ((b or 0) - (a or 0))|eur }}{% endif %}</td></tr>
+    {% endfor %}
+    <tr><td>Primo giorno oltre il fido</td><td class="num">{{ ku.primo_scoperto|gg or 'mai' }}</td><td class="num">{{ ks.primo_scoperto|gg or 'mai' }}</td><td></td></tr>
+    <tr><td>Classe 0 e accordi onorati: oltre il fido dal</td><td class="num">{{ ku.acc_dal|gg or 'mai' }}</td><td class="num">{{ ks.acc_dal|gg or 'mai' }}</td><td></td></tr>
+    {% set a, b = ku.get('acc_scoperto'), ks.get('acc_scoperto') %}
+    <tr><td>Classe 0 e accordi onorati: scoperto massimo €</td><td class="num">{{ a|eur }}</td><td class="num">{{ b|eur }}</td>
+      <td class="num">{% if a is not none and b is not none %}{{ ((b or 0) - (a or 0))|eur }}{% endif %}</td></tr>
+    </tbody>
+  </table>
+</section>
+<section class="riquadro">
+  <h2>Margine sul fido: simulazione e piano ufficiale</h2>
+  <div class="grafico"><canvas data-grafico="{{ grafico }}"></canvas></div>
+</section>
+<section class="riquadro">
+  <h2>Fornitori con pagamenti diversi nell'orizzonte</h2>
+  <table class="denso">
+    <thead><tr><th>Fornitore</th><th class="num">Pagato ufficiale €</th><th class="num">Pagato simulazione €</th><th class="num">Differenza €</th><th class="num">Tagliato ufficiale €</th><th class="num">Tagliato simulazione €</th></tr></thead>
+    <tbody>{% for c in confronto %}
+      <tr><td><a href="/fornitori/{{ c.cod_fornitore }}">{{ c.fornitore }}</a></td><td class="num">{{ c.pagato_uff|eur }}</td><td class="num">{{ c.pagato_sim|eur }}</td>
+      <td class="num {{ 'piu' if c.delta > 0 else 'meno' }}">{{ c.delta|eur }}</td><td class="num">{{ c.tagliato_uff|eur }}</td><td class="num">{{ c.tagliato_sim|eur }}</td></tr>
+    {% else %}<tr><td colspan="6" class="nota">Nessuna differenza per fornitore.</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endblock %}

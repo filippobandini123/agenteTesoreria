@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block corpo %}
+<div class="testata"><h1>{{ f.ragione_sociale }}</h1>{% if nuovo %}<span class="etichetta st-proposta">non in anagrafica</span>{% endif %}
+{% if partite %}<span class="sem neutro">Debito {{ sf.debito|eur }} € · scaduto {{ sf.scaduto|eur }} €</span>{% if sf.conto %}<span class="nota">{{ sf.conto }}</span>{% endif %}{% endif %}<span class="nota">codice {{ f.cod_fornitore }}{% if not nuovo %} · versione in vigore dal {{ f.valido_dal|gg }}{% endif %}{% if f.modificato_da %} · ultima modifica: {{ f.modificato_da }}{% endif %}</span></div>
+{% if nuovo %}<div class="avviso">Il fornitore è nello scadenzario ma non nell'anagrafica: oggi il motore gli assegna la classe di default. Compila i campi e conferma per aggiungerlo.</div>{% endif %}
+<div class="colonne">
+<section class="riquadro">
+  <h2>{{ 'Aggiungi all\'anagrafica' if nuovo else 'Modifica' }}</h2>
+  <form method="post" action="/fornitori/anteprima" class="modulo">
+    <input type="hidden" name="csrf" value="{{ utente.csrf }}">
+    <input type="hidden" name="cod" value="{{ f.cod_fornitore }}">
+    <label>Elenco acquisto <select name="in_elenco_acquisto"><option value="N" {{ 'selected' if not f.in_elenco_acquisto }}>N</option><option value="S" {{ 'selected' if f.in_elenco_acquisto }}>S</option></select></label>
+    <label>Classe (0-5, vuoto = default) <input name="classe_priorita" value="{{ f.classe_priorita if f.classe_priorita is not none else '' }}" inputmode="numeric"></label>
+    <label>Rilevanza (1 strategico · 2 normale · 3 sacrificabile) <select name="rilevanza"><option value="">vuoto (= 2)</option>{% for v in [1,2,3] %}<option {{ 'selected' if f.rilevanza == v }}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Scaduto max tollerato € <input name="scaduto_max_tollerato" value="{{ f.scaduto_max_tollerato|eur(2) }}"></label>
+    <label>Slittamento max (gg) <input name="slittamento_max_gg" value="{{ f.slittamento_max_gg if f.slittamento_max_gg is not none else '' }}" inputmode="numeric"></label>
+    <label>Pagamento minimo € <input name="pagamento_minimo" value="{{ f.pagamento_minimo|eur(2) }}"></label>
+    <label>Note <input name="note" value="{{ f.note or '' }}"></label>
+    <button class="primario">Anteprima</button>
+  </form>
+</section>
+<section class="riquadro">
+  <h2>Storico delle versioni</h2>
+  <table class="denso">
+    <thead><tr><th>Dal</th><th>Al</th><th>Elenco</th><th>Classe</th><th>Ril.</th><th>Autore</th><th>Motivo</th></tr></thead>
+    <tbody>{% for s in storico|reverse %}
+      <tr><td>{{ s.valido_dal|gg }}</td><td>{{ s.valido_al|gg or 'in vigore' }}</td><td>{{ s.in_elenco_acquisto|sn }}</td>
+      <td>{{ s.classe_priorita if s.classe_priorita is not none else '' }}</td><td>{{ s.rilevanza or '' }}</td><td>{{ s.modificato_da or '' }}</td><td>{{ s.motivo or '' }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</section>
+</div>
+<section class="riquadro">
+  <h2>Scadenze nell'ultimo run ufficiale{% if run %} ({{ run.avviato_il|gg }}){% endif %}</h2>
+  <table class="denso">
+    <thead><tr><th>Protocollo</th><th class="num">Importo €</th><th>Scad. documento</th><th>Scad. attuale</th><th>Nuova data</th><th>Classe</th><th>Regola</th><th>Motivo</th></tr></thead>
+    <tbody>{% for p in partite %}
+      <tr><td>{{ p.id_scadenza or '' }}</td><td class="num">{{ p.importo_residuo|eur(2) }}</td><td>{{ p.scad_originale|gg }}</td><td>{{ p.scadenza_corrente|gg }}</td>
+      <td><b>{{ p.nuova_data|gg }}</b></td><td>{{ p.classe }}</td><td><span class="etichetta">{{ p.regola }}</span></td><td class="motivo">{{ p.motivo }}</td></tr>
+    {% else %}<tr><td colspan="8" class="nota">Nessuna scadenza nell'ultimo run.</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endblock %}

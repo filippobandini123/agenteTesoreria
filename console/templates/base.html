@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titolo %}Console Tesoreria{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/chart.umd.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+{% if utente %}
+<header class="barra">
+  <a class="marchio" href="/">Tesoreria</a>
+  <nav>
+    {% set p = request.url.path %}
+    <a href="/" class="{{ 'attivo' if p == '/' or p.startswith('/run') }}">Cruscotto</a>
+    <a href="/fornitori" class="{{ 'attivo' if p.startswith('/fornitori') }}">Fornitori</a>
+    <a href="/accordi" class="{{ 'attivo' if p.startswith('/accordi') }}">Accordi</a>
+    <a href="/simulazioni" class="{{ 'attivo' if p.startswith('/simulazioni') }}">Simulazioni</a>
+    <a href="/registro" class="{{ 'attivo' if p.startswith('/registro') }}">Registro</a>
+  </nav>
+  <form method="post" action="/logout" class="esci">
+    <span class="chi">{{ utente.nome }}</span>
+    <input type="hidden" name="csrf" value="{{ utente.csrf }}">
+    <button class="link">Esci</button>
+  </form>
+</header>
+{% endif %}
+<main>{% block corpo %}{% endblock %}</main>
+</body>
+</html>

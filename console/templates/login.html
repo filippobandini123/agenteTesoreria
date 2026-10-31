@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titolo %}Accesso — Console Tesoreria{% endblock %}
+{% block corpo %}
+<section class="accesso">
+  <h1>Console Tesoreria</h1>
+  <p class="nota">Accesso con le credenziali del gestionale.</p>
+  {% if errori_config %}<div class="avviso ko"><b>Console non configurata:</b><ul>{% for e in errori_config %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if errore %}<div class="avviso ko">{{ errore }}</div>{% endif %}
+  <form method="post" action="/login" class="modulo">
+    <label>Utente <input name="username" autocomplete="username" required autofocus></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="primario">Entra</button>
+  </form>
+</section>
+{% endblock %}

@@ -29,6 +29,8 @@ Responsabile del progetto: **Filippo**. Lingua di lavoro: **italiano**.
 | `skills/riscadenziamento-pagamenti/SKILL.md` | Procedura del run, risposte, simulazioni, modifiche all'anagrafica |
 | `skills/…/scripts/riscadenzia.py` | Motore, punto d'ingresso (codici di uscita 0 ok · 1 errore · 2 controlli KO) |
 | `skills/…/scripts/anagrafica.py` | CLI anagrafica e accordi su Postgres (anteprima → `--conferma`) |
+| `skills/…/scripts/prepara_ambiente.sh` | Verifica (default) o installazione (`--installa`) di Python, librerie, cartelle, database |
+| `skills/…/scripts/export_fornitori_conto.py` | Export Excel dei fornitori per conto contabile (definizioni uguali alla console) |
 | `skills/…/scripts/tesoriere/` | Moduli: `carica` · `controlli` · `classifica` · `alloca` (cuore) · `output` · `db` · `anagrafica_db` · `modello` · `calendario` |
 | `skills/…/scripts/tests/` | Test pytest del motore |
 | `config/regole.yaml` | Regole (versionate: campo `versione`) |
@@ -61,9 +63,16 @@ Responsabile del progetto: **Filippo**. Lingua di lavoro: **italiano**.
 
 ## Ambiente di produzione
 - **Server sempre acceso**, raggiunto via **VPN** con indirizzo IP. Docker.
-- **Hermes** nel container `hermes` (immagine `nousresearch/hermes-agent`, utente UID 10000). Volume dell'host montato
-  su **`/opt/data`**: pacchetto in `/opt/data/tesoriere` (clone di questo repository), dati in `/opt/data/tesoreria/{in,out,archivio,sim}`,
-  profilo in `/opt/data/profiles/tesoriere` (SOUL.md, `.env`, skill collegata con link simbolico).
+- **Hermes** nel container `hermes`, avviato con docker compose da `C:\Users\Utente\progetti\hermes` (immagine locale
+  `hermes-m365:local`, utente UID 10000). **`/opt/data` è il volume Docker `hermes_hermes-data`** (non una cartella di
+  Windows; non esiste alcun mount `/data`): pacchetto in `/opt/data/tesoriere` (copia di questo repository + `.python` +
+  `.venv`), dati in `/opt/data/tesoreria/{in,out,archivio,sim}`, profilo in `/opt/data/profiles/tesoriere` (SOUL.md,
+  `.env`, skill collegata con link simbolico).
+- **Python**: il Tesoriere usa una copia del Python standalone nel volume (`.python`), perché quello dell'immagine
+  cambia percorso a ogni ricostruzione e rompe il venv. `prepara_ambiente.sh` installa e verifica l'ambiente.
+- **Curator di Hermes disattivato** per il profilo: la skill vive solo nel repository; copie nel profilo
+  (es. `skills/finance/…`) prevalgono sul collegamento e vanno eliminate.
+- Il compose monta il socket Docker: il Tesoriere non deve mai usarlo (vincolo nella SOUL).
 - **Canale**: Telegram. Il Report arriva come allegato; la proposta torna come allegato (`MEDIA:<percorso>`).
 - **Postgres**: schema `tesoreria` nello stesso database del gestionale (tabella utenti `public.utente`, password MD5).
 - **Console**: container `tesoreria-console`, porta 8080, dalla VPN; monta solo `tesoriere` (sola lettura) e `tesoreria`.
@@ -87,12 +96,15 @@ Responsabile del progetto: **Filippo**. Lingua di lavoro: **italiano**.
    In `CHANGELOG.md` va scritto se la migrazione deve precedere il codice.
 
 ## Aggiornamento in produzione
+Il clone del repository sta su Windows (`C:\Users\Utente\progetti\agenteTesoreria`); il volume si aggiorna con `docker cp`.
 1. Se `CHANGELOG.md` lo indica: eseguire prima la migrazione del database.
-2. Nel volume: `git pull` in `/opt/data/tesoriere` (dall'host: nella cartella montata).
-3. `docker exec hermes chown -R 10000:10000 /opt/data/tesoriere` se i file sono stati scritti da un altro utente.
-4. Console: `docker compose restart` (o `up -d --build` se è cambiato `console/requirements.txt`).
-5. Agente: la skill è collegata, il codice nuovo vale dal run successivo.
+2. `git -C C:\Users\Utente\progetti\agenteTesoreria pull`
+3. `docker cp C:\Users\Utente\progetti\agenteTesoreria\. hermes:/opt/data/tesoriere/` poi
+   `docker exec hermes chown -R 10000:10000 /opt/data/tesoriere`
+4. Se cambiano `requirements.txt` o il Python: `prepara_ambiente.sh --installa`; se cambia la SOUL, ricopiarla nel profilo.
+5. Console: `docker compose restart` (o `up -d --build` se è cambiato `console/requirements.txt`).
+6. Verifica: `prepara_ambiente.sh` → `AMBIENTE OK`. Dettagli in `INSTALL.md`, "Aggiornare il pacchetto".
 
 ## Cosa non va nel repository
 Report, proposte, simulazioni, anagrafica reale (`config/anagrafica_fornitori.xlsx`: serviva solo al caricamento
-iniziale, la fonte è Postgres), file `.env` e `console.env`, virtualenv. Vedi `.gitignore`.
+iniziale, la fonte è Postgres), file `.env` e `console.env`, virtualenv e `.python`. Vedi `.gitignore`.

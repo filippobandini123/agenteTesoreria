@@ -6,6 +6,7 @@
 #    prepara_ambiente.sh --installa  copia il Python nel volume, ricrea il venv, installa le librerie, verifica
 #    prepara_ambiente.sh --installa --forza   ricopia anche il Python
 #    eval "$(prepara_ambiente.sh --env)"      carica il .env del profilo nella shell corrente, senza stamparlo
+#  Il .env letto è /opt/data/profiles/tesoriere/.env (altro percorso: variabile TESORIERE_ENV).
 #
 #  Perché il Python nel volume: il venv creato con il Python dell'immagine Hermes si rompe a ogni
 #  aggiornamento dell'immagine (cambia la cartella /opt/hermes/tools/python-<versione>). La copia in
@@ -34,7 +35,8 @@ done
 
 # Lettura del .env del profilo riga per riga (valori con spazi, CRLF, BOM e virgolette gestiti; nessun eval del file)
 leggi_env() {
-  local f="${HERMES_HOME:-/opt/data/profiles/tesoriere}/.env" riga k v
+  # Sempre il .env del profilo del Tesoriere: HERMES_HOME del container può puntare altrove (es. /opt/data)
+  local f="${TESORIERE_ENV:-/opt/data/profiles/tesoriere/.env}" riga k v
   [ -f "$f" ] || return 0
   while IFS= read -r riga || [ -n "$riga" ]; do
     riga="${riga%$'\r'}"; riga="${riga#$'\xef\xbb\xbf'}"

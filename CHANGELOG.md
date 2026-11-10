@@ -8,6 +8,7 @@ Contesto: dopo una ricostruzione del container il venv si è rotto (puntava al P
 3.14.7 a 3.14.9) e l'agente seguiva una copia della skill riscritta dal curator di Hermes con percorsi `/data` inesistenti.
 - **`prepara_ambiente.sh`**: copia del Python standalone nel volume (`.python`), venv, librerie, verifica di config,
   cartelle e database. La skill lo esegue prima di ogni run: con un KO l'agente si ferma (niente Python di sistema).
+  Legge sempre `/opt/data/profiles/tesoriere/.env` (non `HERMES_HOME`, che nel container punta altrove).
 - **Skill** arricchita con quanto appreso in esercizio: Report passato con `--input` esplicito, `.env` caricato prima
   dei comandi DB, percorsi assoluti, decisione da `esito` del JSON, `orizzonte_coperto` non aggirabile, simulazioni
   fino a una data e di un apporto di cassa, consultazione dei saldi, export per conto. Solo percorsi `/opt/data/...`.

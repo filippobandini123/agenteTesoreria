@@ -3,6 +3,22 @@
 Versioni del pacchetto Tesoriere (agente, motore, console). Per ogni versione: cosa cambia e, se serve, l'ordine
 dell'aggiornamento. **⚠ migrazione prima** = eseguire la migrazione del database *prima* di aggiornare il codice.
 
+## 0.6.2 — 10/11/2026 — Ambiente stabile e skill unica
+Contesto: dopo una ricostruzione del container il venv si è rotto (puntava al Python dell'immagine, cambiato da
+3.14.7 a 3.14.9) e l'agente seguiva una copia della skill riscritta dal curator di Hermes con percorsi `/data` inesistenti.
+- **`prepara_ambiente.sh`**: copia del Python standalone nel volume (`.python`), venv, librerie, verifica di config,
+  cartelle e database. La skill lo esegue prima di ogni run: con un KO l'agente si ferma (niente Python di sistema).
+- **Skill** arricchita con quanto appreso in esercizio: Report passato con `--input` esplicito, `.env` caricato prima
+  dei comandi DB, percorsi assoluti, decisione da `esito` del JSON, `orizzonte_coperto` non aggirabile, simulazioni
+  fino a una data e di un apporto di cassa, consultazione dei saldi, export per conto. Solo percorsi `/opt/data/...`.
+- **`export_fornitori_conto.py`** nel pacchetto, con le stesse definizioni della pagina Fornitori della console
+  (tagliato = solo tagliate; conto prevalente per importo; anagrafica in vigore).
+- **SOUL**: solo `/opt/data/tesoriere` e `/opt/data/tesoreria`; niente Docker; ambiente KO = niente run; la skill non
+  si modifica né si copia nel profilo.
+- Documentazione: volume Docker `hermes_hermes-data`, aggiornamento con clone su Windows + `docker cp`, curator.
+- Nessuna migrazione del database. Dopo l'aggiornamento: `prepara_ambiente.sh --installa`, ricopiare la SOUL nel
+  profilo, togliere la copia `skills/finance/riscadenziamento-pagamenti` dal profilo, disattivare il curator.
+
 ## 0.6.1 — 31/10/2026
 - Decisione: ordine di priorità 1) classe 0 · 2) accordi · 3) classe 1. Se anche tagliando tutta la classe 1 la cassa non
   basta, gli accordi non si tagliano e lo scoperto resta visibile nel suo giorno. Nessuna modifica al codice.

@@ -60,6 +60,14 @@ scritto nella configurazione, quindi il sistema funziona anche prima della rispo
   - Da chiarire: quale valore di `utente.stato` indica un utente attivo (`CONSOLE_STATO_ATTIVO`).
   - Consigliato: HTTPS con un reverse proxy anche dentro la VPN.
 
+## Decise (10/11)
+- **Ambiente**: il Tesoriere usa un Python copiato nel volume (`prepara_ambiente.sh`); con l'ambiente non pronto
+  l'agente si ferma, non ripiega su altro. *(implementato 0.6.2)*
+- **Skill unica dal repository**: curator disattivato per il profilo, copie nel profilo eliminate; le regole utili
+  imparate in esercizio sono state riportate nella skill del repository. *(implementato 0.6.2)*
+- **Export per conto** con le definizioni della console. *(implementato 0.6.2)*
+- Da valutare: il socket Docker montato nel container Hermes (serve ad altri profili?).
+
 ## Nuove dal primo run (25/10) — le più importanti
 - **13/11**: ripianificato secondo le specifiche (`date_congelate` vuoto). *(implementato 26/10)*
 - **Look-ahead**: 60 giorni, parametro `allocazione.lookahead_giorni`. *(implementato 26/10)*

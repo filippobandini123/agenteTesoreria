@@ -3,75 +3,68 @@
 Flusso in 8 fasi. Ogni fase finisce con una verifica: si passa alla successiva solo se è ok.
 I punti marcati **[verifica]** dipendono dalla propria installazione.
 
-## Come è organizzato in Docker
-Nell'immagine ufficiale `nousresearch/hermes-agent`:
-- il volume `~/.hermes` dell'host è montato in **`/opt/data`** nel container (`HERMES_HOME`);
-- i profili stanno in `/opt/data/profiles/<nome>/`;
-- l'utente di runtime è `hermes` (UID 10000);
-- l'ambiente Python dell'immagine (`/opt/hermes/.venv`) è in sola lettura.
+## Come è organizzato in Docker (configurazione reale, 10/11)
+- Hermes è avviato con **docker compose** da `C:\Users\Utente\progetti\hermes` (immagine locale `hermes-m365:local`,
+  costruita dal Dockerfile per il server MCP Microsoft 365).
+- `/opt/data` è il **volume Docker `hermes_hermes-data`**, non una cartella di Windows: si raggiunge solo dai
+  container (`docker exec`, `docker cp`). Non c'è nessun mount `/data`.
+- I profili stanno in `/opt/data/profiles/<nome>/`; l'utente di runtime è `hermes` (UID 10000).
+- Il Python dell'immagine (`/opt/hermes/tools/python-<versione>`) **cambia a ogni ricostruzione dell'immagine**:
+  per questo il Tesoriere usa una propria copia del Python nel volume (`/opt/data/tesoriere/.python`).
 
-**Tutto il Tesoriere va quindi sul volume**, così sopravvive alla ricreazione del container:
+| Nel container (volume) | Contenuto |
+|---|---|
+| `/opt/data/tesoriere` | pacchetto (copia del repository) + `.python` + `.venv` |
+| `/opt/data/tesoreria/{in,out,archivio,sim}` | Report ricevuti, proposte, archivio, simulazioni ed export |
+| `/opt/data/profiles/tesoriere` | profilo: SOUL.md, `.env`, skill collegata, cron |
 
-| Nel container | Sull'host | Contenuto |
-|---|---|---|
-| `/opt/data/tesoriere` | `~/.hermes/tesoriere` | pacchetto (config, db, skill, motore) + virtualenv `.venv` |
-| `/opt/data/tesoreria/{in,out,archivio,sim}` | `~/.hermes/tesoreria/…` | Report ricevuti, proposte, archivio, simulazioni |
-| `/opt/data/profiles/tesoriere` | `~/.hermes/profiles/tesoriere` | profilo: SOUL.md, .env, skills, cron |
+Il **repository** sta su Windows (`C:\Users\Utente\progetti\agenteTesoreria`, clone di GitHub) e si copia nel volume
+con `docker cp`: così il login a GitHub resta su Windows e nel container non serve alcun token.
 
-Host **Windows (PowerShell, Docker Desktop)**: `~/.hermes` = `C:\Users\<utente>\.hermes`.
 Regole PowerShell da tenere a mente:
-- un comando su più righe si continua con il **backtick** `` ` `` a fine riga, non con `\`
-  (con `\` Docker riceve "\" come programma da eseguire: *executable file not found*);
+- un comando su più righe si continua con il **backtick** `` ` `` a fine riga, non con `\`;
 - nel dubbio, scrivere il comando su **una riga sola**;
-- i percorsi *dentro* il container restano Linux (`/opt/data/...`), quelli dell'host sono Windows.
+- i percorsi *dentro* il container restano Linux (`/opt/data/...`);
+- per passare `$(...)` o `$VAR` al container, racchiudere il comando `sh -c` tra **apici singoli**.
 
-Convenzioni: container `hermes` (cambia il nome se il tuo è diverso). In PowerShell, per comodità:
+Funzioni di comodo (valgono per la finestra di PowerShell aperta):
 ```powershell
-$H = "hermes"                                   # nome del container
-$EnvFile = "$HOME\.hermes\profiles\tesoriere\.env"   # percorso SULL'HOST: correggilo se /opt/data è montato altrove
-function TX { docker exec -u hermes -w /opt/data/tesoriere $H @args }      # comando come utente hermes
-function PYT { docker exec -u hermes --env-file $EnvFile $H /opt/data/tesoriere/.venv/bin/python @args }
+$H = "hermes"
+$R = "C:\Users\Utente\progetti\agenteTesoreria"      # clone del repository su Windows
+function TX { docker exec -u hermes -w /opt/data/tesoriere $H @args }
+# Python del Tesoriere con il .env del profilo caricato dentro il container
+function PYT { docker exec -u hermes $H bash -c 'eval "$(bash /opt/data/tesoriere/skills/riscadenziamento-pagamenti/scripts/prepara_ambiente.sh --env)"; exec /opt/data/tesoriere/.venv/bin/python "$@"' _ @args }
 ```
-Le due funzioni valgono per la finestra di PowerShell aperta: se la chiudi, rilanciale.
 
 ---
 
 ## 0. Prerequisiti
 - Container Hermes attivo (`docker ps` lo mostra) e `docker exec $H hermes doctor` ok.
-- PostgreSQL raggiungibile **dal container**. `localhost` dentro il container non è l'host:
-  - Postgres in un altro container: stessa rete Docker, si usa il nome del servizio come host;
-  - Postgres sull'host: `host.docker.internal`; su Linux serve `--add-host=host.docker.internal:host-gateway`
-    (o `extra_hosts` nel compose).
-- Un bot Telegram dedicato, creato con @BotFather (token), e il tuo **user ID** Telegram (es. @userinfobot).
-- **[verifica]** Il terminale dell'agente deve girare **dentro** il container Hermes (backend `local`).
-  Se usi un backend sandbox separato, quella sandbox deve montare `/opt/data`.
+- PostgreSQL raggiungibile **dal container** (`localhost` dentro il container non è l'host:
+  `host.docker.internal` per un Postgres sull'host, il nome del servizio per un container nella stessa rete).
+- Un bot Telegram dedicato (token di @BotFather) e il tuo **user ID** Telegram.
+- Il terminale dell'agente gira **dentro** il container Hermes.
+- Git per Windows installato.
 
 ## 1. Pacchetto e ambiente Python
-> **Dal 31/10 il pacchetto sta su GitHub.** Al posto dello zip, nella cartella dell'host montata su `/opt/data`:
-> `git clone <url del repository> tesoriere` (prima installazione) oppure `git -C tesoriere pull` (aggiornamenti).
-> Il file `config/anagrafica_fornitori.xlsx` non è nel repository: serviva solo al caricamento iniziale (fase 4),
-> già fatto. Il resto della fase resta valido (virtualenv, test).
-
-Sull'host (PowerShell):
+Clone del repository su Windows (una volta sola):
 ```powershell
-Expand-Archive .\agente-tesoreria.zip -DestinationPath $env:TEMP\tes -Force
-New-Item -ItemType Directory -Force "$HOME\.hermes\tesoriere" | Out-Null
-Copy-Item "$env:TEMP\tes\agente-tesoreria\*" "$HOME\.hermes\tesoriere\" -Recurse -Force
-"in","out","archivio","sim" | ForEach-Object { New-Item -ItemType Directory -Force "$HOME\.hermes\tesoreria\$_" | Out-Null }
-# proprietario = utente hermes del container (su Docker Desktop di solito non serve, ma non fa danni)
+cd C:\Users\Utente\progetti
+git clone -c core.autocrlf=false https://github.com/filippobandini123/agenteTesoreria.git
+```
+`core.autocrlf=false` mantiene i fine riga Linux, quelli che servono nel container.
+
+Copia nel volume e permessi:
+```powershell
+docker exec $H mkdir -p /opt/data/tesoriere /opt/data/tesoreria
+docker cp "$R\." "${H}:/opt/data/tesoriere/"
 docker exec $H chown -R 10000:10000 /opt/data/tesoriere /opt/data/tesoreria
 ```
-Virtualenv sul volume, creato con il Python dell'immagine:
+Python nel volume, venv e librerie (crea anche le cartelle di lavoro e verifica tutto):
 ```powershell
-TX /opt/hermes/.venv/bin/python -m venv /opt/data/tesoriere/.venv
-TX /opt/data/tesoriere/.venv/bin/pip install -r skills/riscadenziamento-pagamenti/scripts/requirements.txt
+TX bash /opt/data/tesoriere/skills/riscadenziamento-pagamenti/scripts/prepara_ambiente.sh --installa
 ```
-Se `pip` manca nel virtualenv (immagini con Python senza `ensurepip`), usare `uv`:
-```powershell
-TX uv venv /opt/data/tesoriere/.venv
-TX uv pip install --python /opt/data/tesoriere/.venv/bin/python -r skills/riscadenziamento-pagamenti/scripts/requirements.txt
-```
-Ultima strada: un'immagine derivata `FROM nousresearch/hermes-agent` con i pacchetti installati.
+Il database risulterà KO finché non c'è il `.env` del profilo (fase 3): è atteso.
 
 Verifica (una riga sola):
 ```powershell
@@ -81,7 +74,7 @@ docker exec -u hermes -w /opt/data/tesoriere/skills/riscadenziamento-pagamenti/s
 
 ## 2. Database
 Dal tuo strumento abituale (DBeaver, pgAdmin o `psql`): creare il database `tesoreria` ed eseguire
-il file `C:\Users\<utente>\.hermes\tesoriere\db\schema.sql`.
+il file `db\schema.sql` del clone su Windows (`C:\Users\Utente\progetti\agenteTesoreria`).
 Utente consigliato per l'agente: privilegi solo sullo schema `tesoreria` (SELECT, INSERT, UPDATE;
 niente DROP, niente altri schemi). DSN **visto dal container**, ad esempio
 `postgresql://tesoriere:<password>@postgres:5432/tesoreria` (nome del servizio) o
@@ -91,7 +84,7 @@ niente DROP, niente altri schemi). DSN **visto dal container**, ad esempio
 ## 3. Profilo Hermes
 ```powershell
 docker exec $H hermes profile create tesoriere --description "<versione breve di description.md>"
-Copy-Item "$HOME\.hermes\tesoriere\SOUL.md" "$HOME\.hermes\profiles\tesoriere\SOUL.md" -Force
+docker exec -u hermes $H cp /opt/data/tesoriere/SOUL.md /opt/data/profiles/tesoriere/SOUL.md
 TX mkdir -p /opt/data/profiles/tesoriere/skills
 TX ln -s /opt/data/tesoriere/skills/riscadenziamento-pagamenti /opt/data/profiles/tesoriere/skills/riscadenziamento-pagamenti
 ```
@@ -127,7 +120,7 @@ Verifica: `docker exec -it $H hermes -p tesoriere chat` → "chi sei e cosa non 
 secondo SOUL.md (niente ERP, niente terzi, anagrafica solo con conferma).
 
 ## 4. Anagrafica su Postgres (una volta sola)
-Prima controlla `C:\Users\<utente>\.hermes\tesoriere\config\anagrafica_fornitori.xlsx`: oggi contiene
+Prima controlla l'Excel dell'anagrafica (non è nel repository: va copiato nel volume con `docker cp`): oggi contiene
 i valori di prova Angelini = rilevanza 1 e Qualifarma = rilevanza 3.
 ```powershell
 function AN { PYT /opt/data/tesoriere/skills/riscadenziamento-pagamenti/scripts/anagrafica.py @args }
@@ -138,12 +131,12 @@ Verifica: `AN cerca qualifarma` → la riga del fornitore; `AN accordi --stato a
 
 ## 5. Prova del motore da terminale (senza Telegram)
 ```powershell
-Copy-Item "<percorso del Report>.xlsx" "$HOME\.hermes\tesoreria\in\"
+docker cp "<percorso del Report>.xlsx" "${H}:/opt/data/tesoreria/in/"
 PYT /opt/data/tesoriere/skills/riscadenziamento-pagamenti/scripts/riscadenzia.py `
   --regole /opt/data/tesoriere/config/regole.yaml --fonti /opt/data/tesoriere/config/fonti_dati.yaml `
   --input /opt/data/tesoreria/in --out /opt/data/tesoreria/sim --json /opt/data/tesoreria/sim/ultimo_run.json --simula
 ```
-Verifica: uscita `OK — …SIM_Proposta…xlsx` (sull'host in `~/.hermes/tesoreria/sim/`); nel JSON
+Verifica: uscita `OK — …SIM_Proposta…xlsx` (nel volume in `/opt/data/tesoreria/sim/`); nel JSON
 `fonte_anagrafica: database`; a DB una riga in `tes_run` con `tipo_run = simulazione`.
 
 ## 6. Telegram
@@ -152,7 +145,7 @@ docker exec -it $H hermes -p tesoriere gateway setup     # scegli Telegram (se t
 docker exec $H hermes -p tesoriere gateway start         # gateway del profilo, supervisionato nel container
 ```
 Nel container ogni profilo ha il suo gateway supervisionato (riparte da solo); log in
-`C:\Users\<utente>\.hermes\logs\gateways\tesoriere\current`. **[verifica]** che il gateway del profilo riparta anche
+`/opt/data/logs/gateways/tesoriere/current` (con `docker exec $H tail …`). **[verifica]** che il gateway del profilo riparta anche
 dopo il riavvio del container; se no, aggiungere lo start al compose o al comando di avvio.
 
 - Il bot risponde **solo** agli utenti in `TELEGRAM_ALLOWED_USERS`; un bot dedicato al Tesoriere
@@ -175,7 +168,7 @@ In chat con il Tesoriere:
 > "Crea un'attività programmata: nei giorni lavorativi alle 11:00, se oggi non c'è un run ufficiale
 > riuscito in tes_run, scrivimi su Telegram che il Report di cassa non è ancora arrivato."
 
-Verifica: il job compare in `C:\Users\<utente>\.hermes\profiles\tesoriere\cron\`. Attenzione al fuso orario del
+Verifica: il job compare in `/opt/data/profiles/tesoriere/cron/`. Attenzione al fuso orario del
 container (spesso UTC): **[verifica]** con `docker exec $H date` e imposta `TZ=Europe/Rome` nel compose se serve.
 
 ## 8. Messa in produzione
@@ -184,12 +177,29 @@ container (spesso UTC): **[verifica]** con `docker exec $H date` e imposta `TZ=E
 - [ ] Compilare la rilevanza dei fornitori principali (da Telegram o in SQL).
 - [ ] Decidere i punti aperti in `DOMANDE_APERTE.md` (corrente degli accordi nei tagli, sigla nella
       nota dei tagliati, protocollo nel foglio Scaduti, Sezdoc).
-- [ ] Backup: database `tesoreria` + cartella `C:\Users\<utente>\.hermes\tesoreria\archivio` (il resto si ricrea dal pacchetto).
+- [ ] Backup: database `tesoreria` + cartella `/opt/data/tesoreria/archivio` del volume (es. `docker cp ${H}:/opt/data/tesoreria/archivio <cartella di backup>`).
 
 ## Aggiornare il pacchetto
-Sull'host, sostituire i file in `C:\Users\<utente>\.hermes\tesoriere` **tranne `.venv`** (il `.env` sta nel profilo),
-rifare il `chown` della fase 1, poi i test della fase 1. Se `requirements.txt` è cambiato, rilanciare il
-`pip install`. Se c'è un nuovo `db/migrazione_*.sql`, eseguirlo una volta sul database.
-Aggiornare l'immagine Hermes non tocca il Tesoriere (sta tutto sul volume); dopo un aggiornamento
-rifare comunque i test, perché cambia il Python dell'immagine con cui è stato creato il virtualenv:
-se i test falliscono, ricreare `.venv` (fase 1).
+1. Se `CHANGELOG.md` lo indica, eseguire **prima** la migrazione del database (`db/migrazione_*.sql`).
+2. Aggiornare il clone su Windows e copiarlo nel volume (`.python`, `.venv` e i dati non vengono toccati):
+   ```powershell
+   git -C $R pull
+   docker cp "$R\." "${H}:/opt/data/tesoriere/"
+   docker exec $H chown -R 10000:10000 /opt/data/tesoriere
+   ```
+3. Se è cambiato `requirements.txt`: `TX bash /opt/data/tesoriere/skills/riscadenziamento-pagamenti/scripts/prepara_ambiente.sh --installa`
+4. Se è cambiata la SOUL: `docker exec -u hermes $H cp /opt/data/tesoriere/SOUL.md /opt/data/profiles/tesoriere/SOUL.md`
+5. Console: `docker compose restart` nella sua cartella.
+6. Verifica: `TX bash /opt/data/tesoriere/skills/riscadenziamento-pagamenti/scripts/prepara_ambiente.sh` → `AMBIENTE OK`.
+
+**Ricostruzione dell'immagine Hermes** (`docker compose build`, aggiornamenti): con il Python copiato nel volume il
+venv non si rompe più. Se la verifica segnala che il venv dipende ancora dal Python dell'immagine, lanciare una volta
+`prepara_ambiente.sh --installa`.
+
+## Curator di Hermes
+Il curator riscrive da solo le skill del profilo. Per il Tesoriere va **disattivato**: la skill è quella del repository
+e una copia modificata nel profilo (es. `skills/finance/riscadenziamento-pagamenti`) prevale su quella collegata.
+Verificare che nel profilo esista solo il collegamento:
+```powershell
+docker exec $H sh -c 'ls -la /opt/data/profiles/tesoriere/skills; find /opt/data/profiles/tesoriere/skills -name SKILL.md'
+```
